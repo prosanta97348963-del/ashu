@@ -1,0 +1,5 @@
+{
+  "name": "Ashu Chatbot",
+  "description": "A friendly AI chatbot powered by Gemini 3.1 Pro.",
+  "requestFramePermissions": []
+}
