@@ -30,7 +30,7 @@ export default function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Initialize Gemini
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+  const ai = new GoogleGenAI({ apiKey: process.env.VITE_GEMINI_API_KEY || '' });
   const chatRef = useRef<any>(null);
 
   useEffect(() => {
@@ -94,7 +94,7 @@ export default function App() {
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'model',
-        text: "Sorry, I encountered an error. Please check your connection or try again later.",
+        text: "Sorry, I encountered an error. Please check your connection or try again later.or call ashish.",
         timestamp: new Date(),
       }]);
     } finally {
