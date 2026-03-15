@@ -30,7 +30,7 @@ export default function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Initialize Gemini
-  const ai = new GoogleGenAI({ apiKey: process.env.VITE_GEMINI_API_KEY || '' });
+  const ai = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
   const chatRef = useRef<any>(null);
 
   useEffect(() => {
