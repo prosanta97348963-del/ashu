@@ -5,7 +5,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { Send, Bot, User, Loader2, Sparkles, Trash2, Github, Mic, MicOff } from 'lucide-react';
+import { Send, Bot, User, Loader2, Sparkles, Trash2, Github, Mic, MicOff, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 
@@ -28,6 +28,7 @@ export default function App() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
@@ -88,6 +89,13 @@ export default function App() {
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    });
   };
 
   useEffect(() => {
@@ -256,7 +264,7 @@ export default function App() {
               initial={{ opacity: 0, y: 20, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className={`flex gap-4 ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+              className={`flex gap-4 group ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
             >
               <motion.div 
                 whileHover={{ scale: 1.1, boxShadow: "0 0 15px rgba(255,255,255,0.1)" }}
@@ -267,10 +275,10 @@ export default function App() {
                 {message.role === 'user' ? <User size={20} /> : <Bot size={20} />}
               </motion.div>
               
-              <div className={`flex flex-col max-w-[80%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
+              <div className={`flex flex-col max-w-[80%] relative ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
                 <motion.div 
                   layout
-                  className={`px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed glass-card ${
+                  className={`px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed glass-card relative ${
                     message.role === 'user' 
                       ? 'bg-indigo-600/20 border-indigo-500/30 text-indigo-50 rounded-tr-none' 
                       : 'bg-white/5 border-white/10 text-white/90 rounded-tl-none'
@@ -294,6 +302,19 @@ export default function App() {
                       </div>
                       <span className="text-[10px] uppercase tracking-[0.2em] text-indigo-400/60 font-bold">Thinking...</span>
                     </div>
+                  )}
+
+                  {message.role === 'model' && message.text && (
+                    <motion.button
+                      initial={{ opacity: 0 }}
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => copyToClipboard(message.text, message.id)}
+                      className={`absolute -right-12 top-0 p-2 rounded-lg bg-white/5 border border-white/10 text-white/40 hover:text-indigo-400 hover:border-indigo-500/30 transition-all opacity-0 group-hover:opacity-100 ${copiedId === message.id ? 'text-emerald-400 border-emerald-500/30' : ''}`}
+                      title="Copy to clipboard"
+                    >
+                      {copiedId === message.id ? <Check size={14} /> : <Copy size={14} />}
+                    </motion.button>
                   )}
                 </motion.div>
                 <span className="text-[9px] uppercase tracking-widest text-white/20 mt-2 px-2 font-mono">
