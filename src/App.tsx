@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenerativeAI, type GenerateContentResponse } from "@google/generative-ai";
+import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { Send, Bot, User, Loader2, Sparkles, Trash2, Github } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -30,19 +30,16 @@ export default function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Initialize Gemini
-  const ai = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
   const chatRef = useRef<any>(null);
 
- useEffect(() => {
+  useEffect(() => {
     if (!chatRef.current) {
-      chatRef.current = ai.getGenerativeModel({ // Note: Use getGenerativeModel
-        model: "gemini-1.5-flash", // ✅ FIX: Use a real model name
-      }).startChat({ // Note: Use startChat for chat interface
-        history: [],
-        generationConfig: {
-          maxOutputTokens: 1000,
+      chatRef.current = ai.chats.create({
+        model: "gemini-3.1-pro-preview",
+        config: {
+          systemInstruction: "You are Ashu, a friendly, helpful, and witty AI chatbot. Your creator is Ashish Mondal. If anyone asks who created you or who your creator is, you should proudly mention Ashish Mondal and introduce him as a talented developer. You are concise but thorough. You enjoy helping users with coding, creative writing, and general questions. You have a warm and approachable personality.",
         },
-        // systemInstruction: "..." // Move this to getGenerativeModel if your SDK version supports it
       });
     }
   }, []);
@@ -97,7 +94,7 @@ export default function App() {
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'model',
-        text: "Sorry, I encountered an error. Please check your connection or try again later.or call ashish.",
+        text: "Sorry, I encountered an error. Please check your connection or try again later.",
         timestamp: new Date(),
       }]);
     } finally {
