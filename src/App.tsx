@@ -303,23 +303,36 @@ export default function App() {
                       <span className="text-[10px] uppercase tracking-[0.2em] text-indigo-400/60 font-bold">Thinking...</span>
                     </div>
                   )}
-
+                </motion.div>
+                <div className="flex items-center gap-3 mt-2 px-2">
+                  <span className="text-[9px] uppercase tracking-widest text-white/20 font-mono">
+                    {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  
                   {message.role === 'model' && message.text && (
                     <motion.button
-                      initial={{ opacity: 0 }}
-                      whileHover={{ scale: 1.1 }}
+                      whileHover={{ scale: 1.1, color: "#818cf8" }}
                       whileTap={{ scale: 0.9 }}
                       onClick={() => copyToClipboard(message.text, message.id)}
-                      className={`absolute -right-12 top-0 p-2 rounded-lg bg-white/5 border border-white/10 text-white/40 hover:text-indigo-400 hover:border-indigo-500/30 transition-all opacity-0 group-hover:opacity-100 ${copiedId === message.id ? 'text-emerald-400 border-emerald-500/30' : ''}`}
+                      className={`flex items-center gap-1.5 text-[9px] uppercase tracking-[0.15em] transition-all ${
+                        copiedId === message.id ? 'text-emerald-400' : 'text-white/20 hover:text-white/40'
+                      }`}
                       title="Copy to clipboard"
                     >
-                      {copiedId === message.id ? <Check size={14} /> : <Copy size={14} />}
+                      {copiedId === message.id ? (
+                        <>
+                          <Check size={10} />
+                          <span>Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={10} />
+                          <span>Copy</span>
+                        </>
+                      )}
                     </motion.button>
                   )}
-                </motion.div>
-                <span className="text-[9px] uppercase tracking-widest text-white/20 mt-2 px-2 font-mono">
-                  {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
+                </div>
               </div>
             </motion.div>
           ))}
