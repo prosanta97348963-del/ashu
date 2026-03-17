@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, type GenerateContentResponse } from "@google/generative-ai";
 import { Send, Bot, User, Loader2, Sparkles, Trash2, Github } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -33,13 +33,16 @@ export default function App() {
   const ai = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
   const chatRef = useRef<any>(null);
 
-  useEffect(() => {
+ useEffect(() => {
     if (!chatRef.current) {
-      chatRef.current = ai.chats.create({
-        model: "gemini-3.1-pro-preview",
-        config: {
-          systemInstruction: "You are Ashu, a friendly, helpful, and witty AI chatbot. Your creator is Ashish Mondal. If anyone asks who created you or who your creator is, you should proudly mention Ashish Mondal and introduce him as a talented developer. You are concise but thorough. You enjoy helping users with coding, creative writing, and general questions. You have a warm and approachable personality.",
+      chatRef.current = ai.getGenerativeModel({ // Note: Use getGenerativeModel
+        model: "gemini-1.5-flash", // ✅ FIX: Use a real model name
+      }).startChat({ // Note: Use startChat for chat interface
+        history: [],
+        generationConfig: {
+          maxOutputTokens: 1000,
         },
+        // systemInstruction: "..." // Move this to getGenerativeModel if your SDK version supports it
       });
     }
   }, []);
