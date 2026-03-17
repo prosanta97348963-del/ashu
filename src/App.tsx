@@ -196,7 +196,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col font-sans text-white relative overflow-hidden">
+    <div className="h-screen flex flex-col font-sans text-white relative overflow-hidden">
       {/* Futuristic Atmospheric Background */}
       <div className="atmosphere" />
 
