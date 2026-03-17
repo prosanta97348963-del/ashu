@@ -1,5 +1,5 @@
 {
   "name": "Ashu AI Assistant",
-  "description": "A powerful and friendly AI assistant named Ashu for all your needs.",
+  "description": "The official Ashu AI Chatbot created by Ashish Mondal. A friendly assistant for everything.",
   "requestFramePermissions": ["microphone"]
 }
