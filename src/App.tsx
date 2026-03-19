@@ -41,9 +41,17 @@ export default function App() {
   const [activeModal, setActiveModal] = useState<'feedback' | 'instructions' | 'pwa' | 'about' | 'history' | null>(null);
   const [history, setHistory] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>(Date.now().toString());
+  const [isFocused, setIsFocused] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  const TRENDING_QUESTIONS = [
+    "Tell me a joke",
+    "How can you help me?",
+    "What's the weather like?",
+    "Write a poem about AI"
+  ];
 
   // Save current chat to history
   const saveCurrentToHistory = () => {
@@ -730,10 +738,44 @@ export default function App() {
       {/* Footer / Input */}
       <footer className="pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] bg-[#050505]/80 backdrop-blur-xl border-t border-white/5 relative z-20">
         <div className="max-w-4xl mx-auto relative">
+          <AnimatePresence>
+            {isFocused && messages.length <= 1 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="absolute bottom-full left-0 w-full mb-4 flex flex-wrap gap-2 z-30"
+              >
+                {TRENDING_QUESTIONS.map((q, i) => (
+                  <motion.button
+                    key={i}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: i * 0.05 }}
+                    whileHover={{ scale: 1.05, backgroundColor: "rgba(99, 102, 241, 0.2)", borderColor: "rgba(99, 102, 241, 0.4)" }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      setInput(q);
+                      setIsFocused(false);
+                      textareaRef.current?.focus();
+                    }}
+                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-full text-xs text-indigo-300 hover:text-white transition-all backdrop-blur-md shadow-lg"
+                  >
+                    {q}
+                  </motion.button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
           <textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => {
+              // Delay blur to allow clicking suggestions
+              setTimeout(() => setIsFocused(false), 200);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
