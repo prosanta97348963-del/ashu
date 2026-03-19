@@ -66,6 +66,7 @@ body {
 .markdown-body {
   font-size: 0.9375rem;
   line-height: 1.6;
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .markdown-body p {
@@ -77,25 +78,27 @@ body {
 }
 
 .markdown-body code {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.15);
   padding: 0.2rem 0.4rem;
   border-radius: 0.25rem;
   font-family: var(--font-mono);
   font-size: 0.85em;
+  color: #fff;
 }
 
 .markdown-body pre {
-  background: rgba(0, 0, 0, 0.3);
+  background: #0a0a0a;
   padding: 1rem;
   border-radius: 0.75rem;
   overflow-x: auto;
   margin: 1rem 0;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .markdown-body pre code {
   background: transparent;
   padding: 0;
+  color: #e2e8f0;
 }
 
 .markdown-body ul, .markdown-body ol {
@@ -105,4 +108,21 @@ body {
 
 .markdown-body li {
   margin-bottom: 0.25rem;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
