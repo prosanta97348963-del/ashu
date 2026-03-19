@@ -8,6 +8,7 @@ import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { Send, Bot, User, Loader2, Sparkles, Trash2, Github, Mic, MicOff, Copy, Check, MoreVertical, MessageSquare, Settings, PlusCircle, X, ExternalLink, Info, History, Clock, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
+import { Logo } from './components/Logo';
 
 interface Message {
   id: string;
@@ -317,9 +318,9 @@ export default function App() {
             whileHover={{ scale: 1.05, rotate: 5, boxShadow: "0 0 20px rgba(99, 102, 241, 0.5)" }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setActiveModal('about')}
-            className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 cursor-pointer border border-white/10"
+            className="cursor-pointer"
           >
-            <Bot size={28} />
+            <Logo size={48} />
           </motion.div>
           <div>
             <div className="flex items-center gap-2">
@@ -534,8 +535,8 @@ export default function App() {
                   {activeModal === 'about' && (
                     <div className="space-y-4">
                       <div className="p-4 bg-white/5 border border-white/10 rounded-2xl text-center">
-                        <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white mx-auto mb-4 shadow-xl shadow-indigo-500/20">
-                          <Bot size={32} />
+                        <div className="flex justify-center mb-4">
+                          <Logo size={80} />
                         </div>
                         <h3 className="text-lg font-bold mb-1">Ashu v2.0</h3>
                         <p className="text-xs text-indigo-400 font-mono tracking-widest uppercase">Neural Assistant</p>
