@@ -3,18 +3,85 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, Component, ErrorInfo, ReactNode } from 'react';
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { Send, Bot, User, Loader2, Sparkles, Trash2, Github, Mic, MicOff, Copy, Check, MoreVertical, MessageSquare, Settings, PlusCircle, X, ExternalLink, Info, History, Clock, ChevronRight } from 'lucide-react';
+import { Send, Bot, User, Loader2, Sparkles, Trash2, Github, Mic, MicOff, Copy, Check, MoreVertical, MessageSquare, Settings, PlusCircle, X, ExternalLink, Info, History, Clock, ChevronRight, Camera, UserCircle, MapPin, LogOut, LogIn } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { Logo } from './components/Logo';
+import { 
+  auth, 
+  db, 
+  googleProvider, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  getDocs, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  Timestamp,
+  handleFirestoreError,
+  OperationType,
+  User as FirebaseUser
+} from './firebase';
+
+// Error Boundary Component
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: any }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: ErrorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 text-center">
+          <div className="max-w-md w-full bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 shadow-2xl">
+            <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <X className="text-red-500" size={32} />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-4">Something went wrong</h2>
+            <p className="text-white/60 mb-8 text-sm leading-relaxed">
+              An unexpected error occurred. Please try refreshing the page or contact support if the issue persists.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-indigo-500/20"
+            >
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 interface Message {
   id: string;
   role: 'user' | 'model';
   text: string;
   timestamp: Date;
+  groundingChunks?: { title: string; uri: string; type: 'web' | 'maps' }[];
 }
 
 interface ChatSession {
@@ -25,11 +92,23 @@ interface ChatSession {
 }
 
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <ChatApp />
+    </ErrorBoundary>
+  );
+}
+
+function ChatApp() {
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isLoginLoading, setIsLoginLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       role: 'model',
-      text: "Hi! I'm Ashu, your friendly AI assistant. How can I help you today?",
+      text: "**Hi there! I'm Ashu 🤝**\n\nI'm your friendly and smart AI assistant, created by **Ashish Mondal**. I'm here to help you with anything you need!\n\nHow can I make your day better? ✨",
       timestamp: new Date(),
     },
   ]);
@@ -38,13 +117,42 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeModal, setActiveModal] = useState<'feedback' | 'instructions' | 'pwa' | 'about' | 'history' | null>(null);
+  const [activeModal, setActiveModal] = useState<'feedback' | 'instructions' | 'pwa' | 'about' | 'history' | 'profile' | null>(null);
+  const [userProfile, setUserProfile] = useState({
+    name: 'User',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix'
+  });
   const [history, setHistory] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>(Date.now().toString());
   const [isFocused, setIsFocused] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  const AVATAR_OPTIONS = [
+    ...['Oliver', 'Amelia', 'Jack', 'Olivia', 'Charlie', 'Isla'].map(seed => `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}`),
+    ...['Robo1', 'Robo2', 'Robo3', 'Robo4', 'Robo5', 'Robo6'].map(seed => `https://api.dicebear.com/7.x/bottts/svg?seed=${seed}`)
+  ];
+
+  const getSystemInstruction = (userName: string) => `You are Ashu, a friendly 🤝, smart 🧠, and slightly casual but respectful AI assistant created by **Ashish Mondal**. 
+
+The user's name is **${userName}**. You MUST always address them by their name in your responses to make them feel special and recognized.
+
+You have access to **Google Search** and **Google Maps** to provide up-to-date and accurate information. When you use search or maps results, you don't need to manually cite them in the text as the system will provide links separately, but you should use the information to be as helpful as possible.
+
+Follow these rules strictly for all responses:
+1. **Format for Readability**: Always use headings, bullet points, or numbered lists for clarity. Break long text into short paragraphs.
+2. **Engaging Tone**: Use a conversational, human-like tone with small emojis where appropriate. Avoid robotic or overly formal language.
+3. **Complete & Helpful**: Explain concepts clearly with examples. Provide step-by-step guidance for 'how to' questions.
+4. **Highlight Key Info**: Use **bold text** for important keywords. Keep sentences simple and easy to understand.
+5. **Add Context**: If a question is short or unclear, provide the answer plus useful extra context.
+6. **Avoid Boring Responses**: No one-line or plain text answers without structure.
+7. **Follow-up**: Ask a follow-up question when it helps the user better.
+8. **Balanced Length**: Keep answers concise but valuable.
+9. **Organize into Sections**: When appropriate, use sections like Overview, Key Points, Steps, and Tips.
+
+If anyone asks who created you, proudly mention **Ashish Mondal** and introduce him as a talented developer.`;
 
   const TRENDING_QUESTIONS = [
     "Tell me a joke",
@@ -53,38 +161,179 @@ export default function App() {
     "Write a poem about AI"
   ];
 
-  // Save current chat to history
-  const saveCurrentToHistory = () => {
-    if (messages.length <= 1) return; // Don't save empty or just-welcome sessions
+  // Auth listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        // Sync user profile to Firestore
+        const userRef = doc(db, 'users', currentUser.uid);
+        try {
+          const userDoc = await getDoc(userRef);
+          if (!userDoc.exists()) {
+            await setDoc(userRef, {
+              uid: currentUser.uid,
+              displayName: currentUser.displayName || 'Anonymous',
+              photoURL: currentUser.photoURL || '',
+              email: currentUser.email || '',
+              role: 'user',
+              createdAt: Timestamp.now()
+            });
+          }
+          setUserProfile({
+            name: currentUser.displayName || 'User',
+            avatar: currentUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.uid}`
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, `users/${currentUser.uid}`);
+        }
+      }
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
 
-    const title = messages.find(m => m.role === 'user')?.text.slice(0, 30) + '...' || 'New Chat';
-    
-    setHistory(prev => {
-      const existingIndex = prev.findIndex(s => s.id === currentSessionId);
-      if (existingIndex >= 0) {
-        const updated = [...prev];
-        updated[existingIndex] = {
-          ...updated[existingIndex],
-          messages: [...messages],
-          timestamp: new Date()
+  // Sync history from Firestore
+  useEffect(() => {
+    if (!user || !isAuthReady) {
+      setHistory([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'chatSessions'),
+      where('userId', '==', user.uid),
+      orderBy('updatedAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const sessions: ChatSession[] = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          title: data.title,
+          timestamp: data.updatedAt.toDate(),
+          messages: [] // Messages will be loaded per session
         };
-        return updated;
-      } else {
-        return [{
-          id: currentSessionId,
-          title,
-          messages: [...messages],
-          timestamp: new Date()
-        }, ...prev];
+      });
+      setHistory(sessions);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'chatSessions');
+    });
+
+    return () => unsubscribe();
+  }, [user, isAuthReady]);
+
+  // Sync messages for current session
+  useEffect(() => {
+    if (!user || !isAuthReady || !currentSessionId) return;
+
+    const q = query(
+      collection(db, 'chatSessions', currentSessionId, 'messages'),
+      orderBy('timestamp', 'asc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (snapshot.empty) {
+        // If it's a new session, we might only have the welcome message locally
+        return;
+      }
+      const msgs: Message[] = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          role: data.role,
+          text: data.text,
+          timestamp: data.timestamp.toDate(),
+          groundingChunks: data.groundingChunks
+        };
+      });
+      setMessages(msgs);
+    }, (error) => {
+      // Only handle error if it's not a "not found" which can happen during session creation
+      if (!(error instanceof Error && error.message.includes('not-found'))) {
+        handleFirestoreError(error, OperationType.LIST, `chatSessions/${currentSessionId}/messages`);
       }
     });
+
+    return () => unsubscribe();
+  }, [user, isAuthReady, currentSessionId]);
+
+  const handleLogin = async () => {
+    if (isLoginLoading) return;
+    
+    setIsLoginLoading(true);
+    setAuthError(null);
+    
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error: any) {
+      console.error("Login failed", error);
+      
+      if (error.code === 'auth/popup-blocked') {
+        setAuthError("The login popup was blocked by your browser. Please allow popups for this site and try again.");
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        setAuthError("Login was cancelled. Please try again.");
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        setAuthError("The login window was closed before completing. Please try again.");
+      } else {
+        setAuthError("An error occurred during login. Please try again.");
+      }
+      
+      // Clear error after 5 seconds
+      setTimeout(() => setAuthError(null), 5000);
+    } finally {
+      setIsLoginLoading(false);
+    }
   };
 
-  const loadSession = (session: ChatSession) => {
-    saveCurrentToHistory();
-    setMessages(session.messages);
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      startNewChat();
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
+  };
+
+  // Save current chat to history (Firestore version)
+  const saveCurrentToHistory = async () => {
+    if (!user || messages.length <= 1) return;
+
+    const title = messages.find(m => m.role === 'user')?.text.slice(0, 30) + '...' || 'New Chat';
+    const sessionRef = doc(db, 'chatSessions', currentSessionId);
+
+    try {
+      await setDoc(sessionRef, {
+        id: currentSessionId,
+        userId: user.uid,
+        title,
+        updatedAt: Timestamp.now()
+      }, { merge: true });
+
+      // Save all messages
+      const messagesCol = collection(db, 'chatSessions', currentSessionId, 'messages');
+      for (const msg of messages) {
+        await setDoc(doc(messagesCol, msg.id), {
+          id: msg.id,
+          role: msg.role,
+          text: msg.text,
+          timestamp: Timestamp.fromDate(msg.timestamp),
+          groundingChunks: msg.groundingChunks || null
+        }, { merge: true });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `chatSessions/${currentSessionId}`);
+    }
+  };
+
+  const loadSession = async (session: ChatSession) => {
+    if (!user) return;
+    await saveCurrentToHistory();
     setCurrentSessionId(session.id);
     setActiveModal(null);
+    
+    // Messages will be loaded by the useEffect onSnapshot
   };
 
   const startNewChat = () => {
@@ -92,54 +341,36 @@ export default function App() {
     setMessages([{
       id: 'welcome',
       role: 'model',
-      text: "Hi! I'm Ashu, your friendly AI assistant. How can I help you today?",
+      text: "**Hi there! I'm Ashu 🤝**\n\nI'm your friendly and smart AI assistant, created by **Ashish Mondal**. I'm here to help you with anything you need!\n\nHow can I make your day better? ✨",
       timestamp: new Date(),
     }]);
     setCurrentSessionId(Date.now().toString());
-    chatRef.current = ai.chats.create({
-      model: "gemini-3.1-pro-preview",
-      config: {
-        systemInstruction: "You are Ashu, a friendly, helpful, and witty AI assistant. Your creator is Ashish Mondal. If anyone asks who created you or who your creator is, you should proudly mention Ashish Mondal and introduce him as a talented developer. You are concise but thorough. You enjoy helping users with coding, creative writing, and general questions. You have a warm and approachable personality.",
-      },
-    });
   };
 
   const clearChat = () => {
     startNewChat();
   };
 
-  const deleteSession = (sessionId: string, e: React.MouseEvent) => {
+  const deleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setHistory(prev => prev.filter(s => s.id !== sessionId));
+    if (!user) return;
+    
+    try {
+      await deleteDoc(doc(db, 'chatSessions', sessionId));
+      // Subcollection messages are not automatically deleted in client SDK, 
+      // but for this app it's fine as they are orphaned.
+      if (currentSessionId === sessionId) {
+        startNewChat();
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `chatSessions/${sessionId}`);
+    }
   };
 
-  // Load history from localStorage
+  // Remove localStorage effects
   useEffect(() => {
-    const savedHistory = localStorage.getItem('ashu_history');
-    if (savedHistory) {
-      try {
-        const parsed = JSON.parse(savedHistory);
-        const formatted = parsed.map((session: any) => ({
-          ...session,
-          timestamp: new Date(session.timestamp),
-          messages: session.messages.map((msg: any) => ({
-            ...msg,
-            timestamp: new Date(msg.timestamp)
-          }))
-        }));
-        setHistory(formatted);
-      } catch (e) {
-        console.error("Failed to parse history", e);
-      }
-    }
+    // No-op to replace the old localStorage logic
   }, []);
-
-  // Save history to localStorage
-  useEffect(() => {
-    if (history.length > 0) {
-      localStorage.setItem('ashu_history', JSON.stringify(history));
-    }
-  }, [history]);
 
   // Handle textarea auto-expansion
   useEffect(() => {
@@ -191,20 +422,43 @@ export default function App() {
     }
   };
   
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+        }
+      );
+    }
+  }, []);
+
   // Initialize Gemini
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
   const chatRef = useRef<any>(null);
 
   useEffect(() => {
-    if (!chatRef.current) {
-      chatRef.current = ai.chats.create({
-        model: "gemini-3.1-pro-preview",
-        config: {
-          systemInstruction: "You are Ashu, a friendly, helpful, and witty AI assistant. Your creator is Ashish Mondal. If anyone asks who created you or who your creator is, you should proudly mention Ashish Mondal and introduce him as a talented developer. You are concise but thorough. You enjoy helping users with coding, creative writing, and general questions. You have a warm and approachable personality.",
-        },
-      });
-    }
-  }, []);
+    chatRef.current = ai.chats.create({
+      model: "gemini-2.5-flash",
+      config: {
+        systemInstruction: getSystemInstruction(userProfile.name),
+        tools: [{ googleSearch: {} }, { googleMaps: {} }],
+        toolConfig: userLocation ? {
+          retrievalConfig: {
+            latLng: {
+              latitude: userLocation.lat,
+              longitude: userLocation.lng
+            }
+          }
+        } : undefined
+      },
+    });
+  }, [userProfile.name, userLocation]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -222,6 +476,10 @@ export default function App() {
   }, [messages]);
 
   const handleSend = async () => {
+    if (!user) {
+      handleLogin();
+      return;
+    }
     if (!input.trim() || isLoading) return;
 
     if (!process.env.GEMINI_API_KEY) {
@@ -261,19 +519,79 @@ export default function App() {
         timestamp: new Date(),
       }]);
 
+      // Save user message to Firestore
+      if (user) {
+        const messagesCol = collection(db, 'chatSessions', currentSessionId, 'messages');
+        await setDoc(doc(messagesCol, userMessage.id), {
+          id: userMessage.id,
+          role: 'user',
+          text: input,
+          timestamp: Timestamp.now()
+        }).catch(err => handleFirestoreError(err, OperationType.WRITE, `chatSessions/${currentSessionId}/messages/${userMessage.id}`));
+        
+        // Ensure session exists
+        await setDoc(doc(db, 'chatSessions', currentSessionId), {
+          id: currentSessionId,
+          userId: user.uid,
+          title: input.slice(0, 30) + '...',
+          updatedAt: Timestamp.now()
+        }, { merge: true }).catch(err => handleFirestoreError(err, OperationType.WRITE, `chatSessions/${currentSessionId}`));
+      }
+
       const streamResponse = await chatRef.current.sendMessageStream({
         message: input,
       });
 
       let fullText = '';
+      let groundingChunks: { title: string; uri: string; type: 'web' | 'maps' }[] = [];
+
       for await (const chunk of streamResponse) {
         const c = chunk as GenerateContentResponse;
         const chunkText = c.text || '';
         fullText += chunkText;
         
+        // Extract grounding metadata if available
+        const metadata = c.candidates?.[0]?.groundingMetadata;
+        if (metadata?.groundingChunks) {
+          metadata.groundingChunks.forEach(chunk => {
+            if (chunk.web?.uri && chunk.web?.title) {
+              const exists = groundingChunks.some(g => g.uri === chunk.web?.uri);
+              if (!exists) {
+                groundingChunks.push({
+                  title: chunk.web.title,
+                  uri: chunk.web.uri,
+                  type: 'web'
+                });
+              }
+            }
+            if (chunk.maps?.uri && chunk.maps?.title) {
+              const exists = groundingChunks.some(g => g.uri === chunk.maps?.uri);
+              if (!exists) {
+                groundingChunks.push({
+                  title: chunk.maps.title,
+                  uri: chunk.maps.uri,
+                  type: 'maps'
+                });
+              }
+            }
+          });
+        }
+
         setMessages(prev => prev.map(msg => 
-          msg.id === modelMessageId ? { ...msg, text: fullText } : msg
+          msg.id === modelMessageId ? { ...msg, text: fullText, groundingChunks: groundingChunks.length > 0 ? groundingChunks : undefined } : msg
         ));
+      }
+
+      // Save model message to Firestore
+      if (user) {
+        const messagesCol = collection(db, 'chatSessions', currentSessionId, 'messages');
+        await setDoc(doc(messagesCol, modelMessageId), {
+          id: modelMessageId,
+          role: 'model',
+          text: fullText,
+          timestamp: Timestamp.now(),
+          groundingChunks: groundingChunks.length > 0 ? groundingChunks : null
+        }).catch(err => handleFirestoreError(err, OperationType.WRITE, `chatSessions/${currentSessionId}/messages/${modelMessageId}`));
       }
       
       // Update history after successful stream
@@ -351,41 +669,58 @@ export default function App() {
         </motion.div>
         
         <div className="flex items-center gap-3">
-          <motion.button 
-            whileHover={{ scale: 1.1, rotate: 5, color: "#ef4444" }}
-            whileTap={{ scale: 0.9 }}
-            onClick={clearChat}
-            className="p-2.5 text-white/40 hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-500/20"
-            title="Reset Neural Link"
-          >
-            <Trash2 size={20} />
-          </motion.button>
-
-          <div className="relative">
-            <motion.button 
-              animate={{ 
-                boxShadow: isMenuOpen 
-                  ? "0 0 25px rgba(99, 102, 241, 0.6)" 
-                  : ["0 0 5px rgba(99, 102, 241, 0.2)", "0 0 15px rgba(99, 102, 241, 0.4)", "0 0 5px rgba(99, 102, 241, 0.2)"],
-                borderColor: isMenuOpen ? "rgba(99, 102, 241, 0.5)" : "rgba(255, 255, 255, 0.1)"
-              }}
-              transition={{ 
-                boxShadow: { duration: 2, repeat: Infinity },
-                borderColor: { duration: 0.3 }
-              }}
-              whileHover={{ scale: 1.1, color: "#818cf8" }}
-              whileTap={{ scale: 1.2, y: -8, rotate: -5, boxShadow: "0 15px 30px rgba(99, 102, 241, 0.4)" }}
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className={`p-2.5 rounded-xl transition-all border ${isMenuOpen ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:bg-white/5'}`}
-              title="Menu"
+          {authError && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="absolute top-full mt-2 right-0 w-64 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs shadow-xl z-50"
             >
-              <motion.div
-                animate={isMenuOpen ? { rotate: 360 } : { rotate: 0 }}
-                transition={{ duration: 0.5, type: "spring" }}
+              {authError}
+            </motion.div>
+          )}
+          <div className="relative">
+            {!user ? (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleLogin}
+                disabled={isLoginLoading}
+                className={`flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs transition-all shadow-lg shadow-indigo-500/20 ${isLoginLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
-                <Bot size={20} className={isMenuOpen ? "drop-shadow-[0_0_8px_#6366f1]" : ""} />
-              </motion.div>
-            </motion.button>
+                {isLoginLoading ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <LogIn size={16} />
+                )}
+                {isLoginLoading ? 'Connecting...' : 'Login'}
+              </motion.button>
+            ) : (
+              <motion.button 
+                animate={{ 
+                  boxShadow: isMenuOpen 
+                    ? "0 0 25px rgba(99, 102, 241, 0.6)" 
+                    : ["0 0 5px rgba(99, 102, 241, 0.2)", "0 0 15px rgba(99, 102, 241, 0.4)", "0 0 5px rgba(99, 102, 241, 0.2)"],
+                  borderColor: isMenuOpen ? "rgba(99, 102, 241, 0.5)" : "rgba(255, 255, 255, 0.1)"
+                }}
+                transition={{ 
+                  boxShadow: { duration: 2, repeat: Infinity },
+                  borderColor: { duration: 0.3 }
+                }}
+                whileHover={{ scale: 1.1, color: "#818cf8" }}
+                whileTap={{ scale: 1.2, y: -8, rotate: -5, boxShadow: "0 15px 30px rgba(99, 102, 241, 0.4)" }}
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className={`p-2.5 rounded-xl transition-all border ${isMenuOpen ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:bg-white/5'}`}
+                title="Menu"
+              >
+                <motion.div
+                  animate={isMenuOpen ? { rotate: 360 } : { rotate: 0 }}
+                  transition={{ duration: 0.5, type: "spring" }}
+                >
+                  <Bot size={20} className={isMenuOpen ? "drop-shadow-[0_0_8px_#6366f1]" : ""} />
+                </motion.div>
+              </motion.button>
+            )}
 
             <AnimatePresence>
               {isMenuOpen && (
@@ -404,6 +739,13 @@ export default function App() {
                     className="absolute right-0 mt-2 w-56 bg-[#0a0a0a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-40"
                   >
                     <div className="p-2 flex flex-col gap-1">
+                      <button 
+                        onClick={() => { setActiveModal('profile'); setIsMenuOpen(false); }}
+                        className="flex items-center gap-3 px-4 py-3 text-sm text-white/70 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
+                      >
+                        <UserCircle size={18} className="text-indigo-400 group-hover:scale-110 transition-transform" />
+                        User Profile
+                      </button>
                       <button 
                         onClick={() => { setActiveModal('feedback'); setIsMenuOpen(false); }}
                         className="flex items-center gap-3 px-4 py-3 text-sm text-white/70 hover:text-white hover:bg-white/5 rounded-xl transition-all group"
@@ -432,6 +774,13 @@ export default function App() {
                       >
                         <PlusCircle size={18} className="text-indigo-400 group-hover:scale-110 transition-transform" />
                         Add to Home Screen
+                      </button>
+                      <button 
+                        onClick={() => { handleLogout(); setIsMenuOpen(false); }}
+                        className="flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/5 rounded-xl transition-all group"
+                      >
+                        <LogOut size={18} className="group-hover:scale-110 transition-transform" />
+                        Logout
                       </button>
                     </div>
                   </motion.div>
@@ -463,6 +812,7 @@ export default function App() {
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400 border border-indigo-500/20">
+                      {activeModal === 'profile' && <UserCircle size={20} />}
                       {activeModal === 'feedback' && <MessageSquare size={20} />}
                       {activeModal === 'instructions' && <Settings size={20} />}
                       {activeModal === 'pwa' && <PlusCircle size={20} />}
@@ -470,6 +820,7 @@ export default function App() {
                       {activeModal === 'history' && <History size={20} />}
                     </div>
                     <h2 className="text-xl font-bold">
+                      {activeModal === 'profile' && 'User Profile'}
                       {activeModal === 'feedback' && 'Share Feedback'}
                       {activeModal === 'instructions' && 'Improve Ashu'}
                       {activeModal === 'pwa' && 'Install App'}
@@ -486,6 +837,55 @@ export default function App() {
                 </div>
 
                 <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                  {activeModal === 'profile' && (
+                    <div className="space-y-6">
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="relative group">
+                          <div className="w-24 h-24 rounded-3xl overflow-hidden border-2 border-indigo-500/50 shadow-xl shadow-indigo-500/20">
+                            <img src={userProfile.avatar} alt="User Avatar" className="w-full h-full object-cover" />
+                          </div>
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-3xl">
+                            <Camera size={24} className="text-white" />
+                          </div>
+                        </div>
+                        <div className="w-full space-y-2">
+                          <label className="text-[10px] text-white/30 uppercase tracking-widest font-bold ml-1">Display Name</label>
+                          <input 
+                            type="text"
+                            value={userProfile.name}
+                            onChange={(e) => setUserProfile(prev => ({ ...prev, name: e.target.value }))}
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all"
+                            placeholder="Enter your name..."
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="text-[10px] text-white/30 uppercase tracking-widest font-bold ml-1">Choose Avatar</label>
+                        <div className="grid grid-cols-4 gap-3">
+                          {AVATAR_OPTIONS.map((avatar, i) => (
+                            <button
+                              key={i}
+                              onClick={() => setUserProfile(prev => ({ ...prev, avatar }))}
+                              className={`w-full aspect-square rounded-xl overflow-hidden border-2 transition-all hover:scale-105 ${
+                                userProfile.avatar === avatar ? 'border-indigo-500 shadow-lg shadow-indigo-500/20' : 'border-transparent opacity-50 hover:opacity-100'
+                              }`}
+                            >
+                              <img src={avatar} alt={`Avatar ${i}`} className="w-full h-full object-cover" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button 
+                        onClick={() => setActiveModal(null)}
+                        className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-sm transition-all shadow-lg shadow-indigo-600/20"
+                      >
+                        Save Profile
+                      </button>
+                    </div>
+                  )}
+
                   {activeModal === 'history' && (
                     <div className="space-y-3">
                       {history.length === 0 ? (
@@ -669,14 +1069,23 @@ export default function App() {
             >
               <motion.div 
                 whileHover={{ scale: 1.1, boxShadow: "0 0 15px rgba(255,255,255,0.1)" }}
-                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-white/10 ${
-                  message.role === 'user' ? 'bg-white/5 text-white/70' : 'bg-indigo-500/10 text-indigo-400'
+                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-white/10 overflow-hidden ${
+                  message.role === 'user' ? 'bg-white/5' : 'bg-indigo-500/10 text-indigo-400'
                 }`}
               >
-                {message.role === 'user' ? <User size={20} /> : <Bot size={20} />}
+                {message.role === 'user' ? (
+                  <img src={userProfile.avatar} alt="User" className="w-full h-full object-cover" />
+                ) : (
+                  <Bot size={20} />
+                )}
               </motion.div>
               
               <div className={`flex flex-col max-w-[80%] relative ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
+                <div className="flex items-center gap-2 mb-1 px-1">
+                  <span className="text-[10px] uppercase tracking-widest font-bold text-white/30">
+                    {message.role === 'user' ? userProfile.name : 'Ashu'}
+                  </span>
+                </div>
                 <motion.div 
                   layout
                   className={`px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed relative group/bubble shadow-lg ${
@@ -723,6 +1132,32 @@ export default function App() {
                     </motion.button>
                   )}
                 </motion.div>
+
+                {message.groundingChunks && message.groundingChunks.length > 0 && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-3 flex flex-wrap gap-2 px-1"
+                  >
+                    {message.groundingChunks.map((chunk, i) => (
+                      <a
+                        key={i}
+                        href={chunk.uri}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-full text-[10px] text-white/60 hover:text-white hover:bg-white/10 hover:border-indigo-500/30 transition-all group"
+                      >
+                        {chunk.type === 'maps' ? (
+                          <MapPin size={10} className="text-emerald-400 group-hover:scale-110 transition-transform" />
+                        ) : (
+                          <ExternalLink size={10} className="text-indigo-400 group-hover:scale-110 transition-transform" />
+                        )}
+                        <span className="truncate max-w-[150px]">{chunk.title}</span>
+                      </a>
+                    ))}
+                  </motion.div>
+                )}
+
                 <div className="flex items-center gap-3 mt-2 px-2">
                   <span className="text-[9px] uppercase tracking-widest text-white/20 font-mono">
                     {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
