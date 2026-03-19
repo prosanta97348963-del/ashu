@@ -302,12 +302,12 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen flex flex-col font-sans text-white relative overflow-hidden">
+    <div className="h-[100dvh] flex flex-col font-sans text-white relative overflow-hidden">
       {/* Futuristic Atmospheric Background */}
       <div className="atmosphere" />
 
       {/* Header */}
-      <header className="sticky top-0 z-20 bg-[#050505]/80 backdrop-blur-xl px-6 py-4 flex items-center justify-between shadow-2xl border-b border-white/5">
+      <header className="sticky top-0 z-20 bg-[#050505]/80 backdrop-blur-xl pt-[max(1rem,env(safe-area-inset-top))] pb-4 pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] flex items-center justify-between shadow-2xl border-b border-white/5">
         <motion.div 
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
@@ -727,7 +727,7 @@ export default function App() {
       </main>
 
       {/* Footer / Input */}
-      <footer className="p-6 bg-[#050505]/80 backdrop-blur-xl border-t border-white/5 relative z-20">
+      <footer className="pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] bg-[#050505]/80 backdrop-blur-xl border-t border-white/5 relative z-20">
         <div className="max-w-4xl mx-auto relative">
           <textarea
             ref={textareaRef}

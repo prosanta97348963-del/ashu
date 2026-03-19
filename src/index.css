@@ -16,6 +16,7 @@ body {
   background-color: var(--color-bg);
   color: #ffffff;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 /* Atmospheric background—layered gradients */
