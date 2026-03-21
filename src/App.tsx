@@ -3,78 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { Send, Bot, User, Loader2, Sparkles, Trash2, Github, Mic, MicOff, Copy, Check, MoreVertical, MessageSquare, Settings, PlusCircle, X, ExternalLink, Info, History, Clock, ChevronRight, Camera, UserCircle, MapPin, LogOut, LogIn } from 'lucide-react';
+import { Send, Bot, User, Loader2, Sparkles, Trash2, Github, Mic, MicOff, Copy, Check, MoreVertical, MessageSquare, Settings, PlusCircle, X, ExternalLink, Info, History, Clock, ChevronRight, Camera, UserCircle, MapPin } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { Logo } from './components/Logo';
-import { 
-  auth, 
-  db, 
-  googleProvider, 
-  signInWithPopup, 
-  signOut, 
-  onAuthStateChanged, 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  getDocs, 
-  query, 
-  where, 
-  orderBy, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  Timestamp,
-  handleFirestoreError,
-  OperationType,
-  User as FirebaseUser
-} from './firebase';
-
-// Error Boundary Component
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: any }> {
-  constructor(props: { children: ReactNode }) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error: any) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: any, errorInfo: ErrorInfo) {
-    console.error("Uncaught error:", error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 text-center">
-          <div className="max-w-md w-full bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 shadow-2xl">
-            <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <X className="text-red-500" size={32} />
-            </div>
-            <h2 className="text-2xl font-bold text-white mb-4">Something went wrong</h2>
-            <p className="text-white/60 mb-8 text-sm leading-relaxed">
-              An unexpected error occurred. Please try refreshing the page or contact support if the issue persists.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-indigo-500/20"
-            >
-              Refresh Page
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
 
 interface Message {
   id: string;
@@ -92,18 +26,6 @@ interface ChatSession {
 }
 
 export default function App() {
-  return (
-    <ErrorBoundary>
-      <ChatApp />
-    </ErrorBoundary>
-  );
-}
-
-function ChatApp() {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [isLoginLoading, setIsLoginLoading] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
@@ -161,179 +83,38 @@ If anyone asks who created you, proudly mention **Ashish Mondal** and introduce 
     "Write a poem about AI"
   ];
 
-  // Auth listener
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        // Sync user profile to Firestore
-        const userRef = doc(db, 'users', currentUser.uid);
-        try {
-          const userDoc = await getDoc(userRef);
-          if (!userDoc.exists()) {
-            await setDoc(userRef, {
-              uid: currentUser.uid,
-              displayName: currentUser.displayName || 'Anonymous',
-              photoURL: currentUser.photoURL || '',
-              email: currentUser.email || '',
-              role: 'user',
-              createdAt: Timestamp.now()
-            });
-          }
-          setUserProfile({
-            name: currentUser.displayName || 'User',
-            avatar: currentUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.uid}`
-          });
-        } catch (error) {
-          handleFirestoreError(error, OperationType.WRITE, `users/${currentUser.uid}`);
-        }
-      }
-      setIsAuthReady(true);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Sync history from Firestore
-  useEffect(() => {
-    if (!user || !isAuthReady) {
-      setHistory([]);
-      return;
-    }
-
-    const q = query(
-      collection(db, 'chatSessions'),
-      where('userId', '==', user.uid),
-      orderBy('updatedAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const sessions: ChatSession[] = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          title: data.title,
-          timestamp: data.updatedAt.toDate(),
-          messages: [] // Messages will be loaded per session
-        };
-      });
-      setHistory(sessions);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'chatSessions');
-    });
-
-    return () => unsubscribe();
-  }, [user, isAuthReady]);
-
-  // Sync messages for current session
-  useEffect(() => {
-    if (!user || !isAuthReady || !currentSessionId) return;
-
-    const q = query(
-      collection(db, 'chatSessions', currentSessionId, 'messages'),
-      orderBy('timestamp', 'asc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (snapshot.empty) {
-        // If it's a new session, we might only have the welcome message locally
-        return;
-      }
-      const msgs: Message[] = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          role: data.role,
-          text: data.text,
-          timestamp: data.timestamp.toDate(),
-          groundingChunks: data.groundingChunks
-        };
-      });
-      setMessages(msgs);
-    }, (error) => {
-      // Only handle error if it's not a "not found" which can happen during session creation
-      if (!(error instanceof Error && error.message.includes('not-found'))) {
-        handleFirestoreError(error, OperationType.LIST, `chatSessions/${currentSessionId}/messages`);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [user, isAuthReady, currentSessionId]);
-
-  const handleLogin = async () => {
-    if (isLoginLoading) return;
-    
-    setIsLoginLoading(true);
-    setAuthError(null);
-    
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error: any) {
-      console.error("Login failed", error);
-      
-      if (error.code === 'auth/popup-blocked') {
-        setAuthError("The login popup was blocked by your browser. Please allow popups for this site and try again.");
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        setAuthError("Login was cancelled. Please try again.");
-      } else if (error.code === 'auth/popup-closed-by-user') {
-        setAuthError("The login window was closed before completing. Please try again.");
-      } else {
-        setAuthError("An error occurred during login. Please try again.");
-      }
-      
-      // Clear error after 5 seconds
-      setTimeout(() => setAuthError(null), 5000);
-    } finally {
-      setIsLoginLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      startNewChat();
-    } catch (error) {
-      console.error("Logout failed", error);
-    }
-  };
-
-  // Save current chat to history (Firestore version)
-  const saveCurrentToHistory = async () => {
-    if (!user || messages.length <= 1) return;
+  // Save current chat to history
+  const saveCurrentToHistory = () => {
+    if (messages.length <= 1) return; // Don't save empty or just-welcome sessions
 
     const title = messages.find(m => m.role === 'user')?.text.slice(0, 30) + '...' || 'New Chat';
-    const sessionRef = doc(db, 'chatSessions', currentSessionId);
-
-    try {
-      await setDoc(sessionRef, {
-        id: currentSessionId,
-        userId: user.uid,
-        title,
-        updatedAt: Timestamp.now()
-      }, { merge: true });
-
-      // Save all messages
-      const messagesCol = collection(db, 'chatSessions', currentSessionId, 'messages');
-      for (const msg of messages) {
-        await setDoc(doc(messagesCol, msg.id), {
-          id: msg.id,
-          role: msg.role,
-          text: msg.text,
-          timestamp: Timestamp.fromDate(msg.timestamp),
-          groundingChunks: msg.groundingChunks || null
-        }, { merge: true });
+    
+    setHistory(prev => {
+      const existingIndex = prev.findIndex(s => s.id === currentSessionId);
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          messages: [...messages],
+          timestamp: new Date()
+        };
+        return updated;
+      } else {
+        return [{
+          id: currentSessionId,
+          title,
+          messages: [...messages],
+          timestamp: new Date()
+        }, ...prev];
       }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `chatSessions/${currentSessionId}`);
-    }
+    });
   };
 
-  const loadSession = async (session: ChatSession) => {
-    if (!user) return;
-    await saveCurrentToHistory();
+  const loadSession = (session: ChatSession) => {
+    saveCurrentToHistory();
+    setMessages(session.messages);
     setCurrentSessionId(session.id);
     setActiveModal(null);
-    
-    // Messages will be loaded by the useEffect onSnapshot
   };
 
   const startNewChat = () => {
@@ -345,32 +126,63 @@ If anyone asks who created you, proudly mention **Ashish Mondal** and introduce 
       timestamp: new Date(),
     }]);
     setCurrentSessionId(Date.now().toString());
+    chatRef.current = ai.chats.create({
+      model: "gemini-3.1-pro-preview",
+      config: {
+        systemInstruction: getSystemInstruction(userProfile.name),
+      },
+    });
   };
 
   const clearChat = () => {
     startNewChat();
   };
 
-  const deleteSession = async (sessionId: string, e: React.MouseEvent) => {
+  const deleteSession = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!user) return;
-    
-    try {
-      await deleteDoc(doc(db, 'chatSessions', sessionId));
-      // Subcollection messages are not automatically deleted in client SDK, 
-      // but for this app it's fine as they are orphaned.
-      if (currentSessionId === sessionId) {
-        startNewChat();
-      }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `chatSessions/${sessionId}`);
-    }
+    setHistory(prev => prev.filter(s => s.id !== sessionId));
   };
 
-  // Remove localStorage effects
+  // Load history and profile from localStorage
   useEffect(() => {
-    // No-op to replace the old localStorage logic
+    const savedProfile = localStorage.getItem('ashu_profile');
+    if (savedProfile) {
+      try {
+        setUserProfile(JSON.parse(savedProfile));
+      } catch (e) {
+        console.error("Failed to parse profile", e);
+      }
+    }
+
+    const savedHistory = localStorage.getItem('ashu_history');
+    if (savedHistory) {
+      try {
+        const parsed = JSON.parse(savedHistory);
+        const formatted = parsed.map((session: any) => ({
+          ...session,
+          timestamp: new Date(session.timestamp),
+          messages: session.messages.map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          }))
+        }));
+        setHistory(formatted);
+      } catch (e) {
+        console.error("Failed to parse history", e);
+      }
+    }
   }, []);
+
+  // Save history and profile to localStorage
+  useEffect(() => {
+    localStorage.setItem('ashu_profile', JSON.stringify(userProfile));
+  }, [userProfile]);
+
+  useEffect(() => {
+    if (history.length > 0) {
+      localStorage.setItem('ashu_history', JSON.stringify(history));
+    }
+  }, [history]);
 
   // Handle textarea auto-expansion
   useEffect(() => {
@@ -476,10 +288,6 @@ If anyone asks who created you, proudly mention **Ashish Mondal** and introduce 
   }, [messages]);
 
   const handleSend = async () => {
-    if (!user) {
-      handleLogin();
-      return;
-    }
     if (!input.trim() || isLoading) return;
 
     if (!process.env.GEMINI_API_KEY) {
@@ -518,25 +326,6 @@ If anyone asks who created you, proudly mention **Ashish Mondal** and introduce 
         text: '',
         timestamp: new Date(),
       }]);
-
-      // Save user message to Firestore
-      if (user) {
-        const messagesCol = collection(db, 'chatSessions', currentSessionId, 'messages');
-        await setDoc(doc(messagesCol, userMessage.id), {
-          id: userMessage.id,
-          role: 'user',
-          text: input,
-          timestamp: Timestamp.now()
-        }).catch(err => handleFirestoreError(err, OperationType.WRITE, `chatSessions/${currentSessionId}/messages/${userMessage.id}`));
-        
-        // Ensure session exists
-        await setDoc(doc(db, 'chatSessions', currentSessionId), {
-          id: currentSessionId,
-          userId: user.uid,
-          title: input.slice(0, 30) + '...',
-          updatedAt: Timestamp.now()
-        }, { merge: true }).catch(err => handleFirestoreError(err, OperationType.WRITE, `chatSessions/${currentSessionId}`));
-      }
 
       const streamResponse = await chatRef.current.sendMessageStream({
         message: input,
@@ -580,18 +369,6 @@ If anyone asks who created you, proudly mention **Ashish Mondal** and introduce 
         setMessages(prev => prev.map(msg => 
           msg.id === modelMessageId ? { ...msg, text: fullText, groundingChunks: groundingChunks.length > 0 ? groundingChunks : undefined } : msg
         ));
-      }
-
-      // Save model message to Firestore
-      if (user) {
-        const messagesCol = collection(db, 'chatSessions', currentSessionId, 'messages');
-        await setDoc(doc(messagesCol, modelMessageId), {
-          id: modelMessageId,
-          role: 'model',
-          text: fullText,
-          timestamp: Timestamp.now(),
-          groundingChunks: groundingChunks.length > 0 ? groundingChunks : null
-        }).catch(err => handleFirestoreError(err, OperationType.WRITE, `chatSessions/${currentSessionId}/messages/${modelMessageId}`));
       }
       
       // Update history after successful stream
@@ -669,58 +446,31 @@ If anyone asks who created you, proudly mention **Ashish Mondal** and introduce 
         </motion.div>
         
         <div className="flex items-center gap-3">
-          {authError && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="absolute top-full mt-2 right-0 w-64 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs shadow-xl z-50"
-            >
-              {authError}
-            </motion.div>
-          )}
           <div className="relative">
-            {!user ? (
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleLogin}
-                disabled={isLoginLoading}
-                className={`flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs transition-all shadow-lg shadow-indigo-500/20 ${isLoginLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
+            <motion.button 
+              animate={{ 
+                boxShadow: isMenuOpen 
+                  ? "0 0 25px rgba(99, 102, 241, 0.6)" 
+                  : ["0 0 5px rgba(99, 102, 241, 0.2)", "0 0 15px rgba(99, 102, 241, 0.4)", "0 0 5px rgba(99, 102, 241, 0.2)"],
+                borderColor: isMenuOpen ? "rgba(99, 102, 241, 0.5)" : "rgba(255, 255, 255, 0.1)"
+              }}
+              transition={{ 
+                boxShadow: { duration: 2, repeat: Infinity },
+                borderColor: { duration: 0.3 }
+              }}
+              whileHover={{ scale: 1.1, color: "#818cf8" }}
+              whileTap={{ scale: 1.2, y: -8, rotate: -5, boxShadow: "0 15px 30px rgba(99, 102, 241, 0.4)" }}
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className={`p-2.5 rounded-xl transition-all border ${isMenuOpen ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:bg-white/5'}`}
+              title="Menu"
+            >
+              <motion.div
+                animate={isMenuOpen ? { rotate: 360 } : { rotate: 0 }}
+                transition={{ duration: 0.5, type: "spring" }}
               >
-                {isLoginLoading ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <LogIn size={16} />
-                )}
-                {isLoginLoading ? 'Connecting...' : 'Login'}
-              </motion.button>
-            ) : (
-              <motion.button 
-                animate={{ 
-                  boxShadow: isMenuOpen 
-                    ? "0 0 25px rgba(99, 102, 241, 0.6)" 
-                    : ["0 0 5px rgba(99, 102, 241, 0.2)", "0 0 15px rgba(99, 102, 241, 0.4)", "0 0 5px rgba(99, 102, 241, 0.2)"],
-                  borderColor: isMenuOpen ? "rgba(99, 102, 241, 0.5)" : "rgba(255, 255, 255, 0.1)"
-                }}
-                transition={{ 
-                  boxShadow: { duration: 2, repeat: Infinity },
-                  borderColor: { duration: 0.3 }
-                }}
-                whileHover={{ scale: 1.1, color: "#818cf8" }}
-                whileTap={{ scale: 1.2, y: -8, rotate: -5, boxShadow: "0 15px 30px rgba(99, 102, 241, 0.4)" }}
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className={`p-2.5 rounded-xl transition-all border ${isMenuOpen ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:bg-white/5'}`}
-                title="Menu"
-              >
-                <motion.div
-                  animate={isMenuOpen ? { rotate: 360 } : { rotate: 0 }}
-                  transition={{ duration: 0.5, type: "spring" }}
-                >
-                  <Bot size={20} className={isMenuOpen ? "drop-shadow-[0_0_8px_#6366f1]" : ""} />
-                </motion.div>
-              </motion.button>
-            )}
+                <Bot size={20} className={isMenuOpen ? "drop-shadow-[0_0_8px_#6366f1]" : ""} />
+              </motion.div>
+            </motion.button>
 
             <AnimatePresence>
               {isMenuOpen && (
@@ -774,13 +524,6 @@ If anyone asks who created you, proudly mention **Ashish Mondal** and introduce 
                       >
                         <PlusCircle size={18} className="text-indigo-400 group-hover:scale-110 transition-transform" />
                         Add to Home Screen
-                      </button>
-                      <button 
-                        onClick={() => { handleLogout(); setIsMenuOpen(false); }}
-                        className="flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/5 rounded-xl transition-all group"
-                      >
-                        <LogOut size={18} className="group-hover:scale-110 transition-transform" />
-                        Logout
                       </button>
                     </div>
                   </motion.div>
